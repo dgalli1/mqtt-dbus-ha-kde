@@ -1,6 +1,6 @@
-module github.com/dgalli1/go-mqtt-dbus-ha
+module github.com/dgalli1/mqtt-dbus-ha-kde
 
-go 1.19
+go 1.22
 
 require (
 	github.com/eclipse/paho.mqtt.golang v1.4.3

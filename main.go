@@ -47,20 +47,6 @@ type Config struct {
 	HomeAssistantPropertyIDsRegex map[string]string `json:"homeassistant_property_ids_regex"`
 }
 
-func loadConfig(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading config file: %w", err)
-	}
-
-	var config Config
-	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("parsing config file: %w", err)
-	}
-
-	return &config, nil
-}
-
 type LightDevice struct {
 	Name       string `json:"name"`
 	UniqueID   string `json:"uniq_id"`
@@ -323,6 +309,20 @@ func initializeMQTT(config *Config, conn *dbus.Conn) mqtt.Client {
 		log.Fatal(token.Error())
 	}
 	return client
+}
+
+func loadConfig(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading config file: %w", err)
+	}
+
+	var config Config
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("parsing config file: %w", err)
+	}
+
+	return &config, nil
 }
 
 func getConfigPath() string {
