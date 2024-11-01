@@ -12,11 +12,17 @@ A Go service that connects your Linux system's screen brightness to Home Assista
 ## Configuration
 
 Create a configuration file at `/etc/go-mqtt-dbus.conf` with the following JSON structure:
+    
+```json
 {
-    "mqtt_broker": "192.168.178.81",
+    "mqtt_broker": "ip_of_your_mqtt_broker",
     "mqtt_port": 1883,
-    "client_id": "go-mqtt-dbus-client"
+    "client_id": "mqtt-dbus-brightness-ha",
+    "homeassistant_property_ids_regex": {
+        "home_assistant_property_name": "Regex to match your Display Name",
+    }
 }
+```
 
 ## Installation
 
@@ -71,6 +77,7 @@ Now you can create a new Automation with an external lux sensor or anything else
 
 
 This is en example configuration that works for me, you can adjust the values 2.8 to something depending on what value you want the brightness to scale.
+A higher value will make the screen dimmer in darker environments and brighter in brighter environments.
 
 ```yaml
 alias: Dynamic Screen Brightness
