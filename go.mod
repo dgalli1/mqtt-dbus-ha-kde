@@ -1,4 +1,4 @@
-module github.com/damian/go-mqtt-dbus-ha
+module github.com/dgalli1/go-mqtt-dbus-ha
 
 go 1.19
 
