@@ -49,7 +49,6 @@ func getBrightness(conn *dbus.Conn) (int32, error) {
 	}
 
 	brightness, ok := variant.Value().(int32)
-	print(brightness)
 	if !ok {
 		return 0, fmt.Errorf("unexpected type for brightness property: %T", variant.Value())
 	}
@@ -58,10 +57,14 @@ func getBrightness(conn *dbus.Conn) (int32, error) {
 }
 
 func setBrightness(conn *dbus.Conn, brightness int32) error {
-	print(brightness)
 	obj := conn.Object("org.kde.ScreenBrightness", dbus.ObjectPath("/org/kde/ScreenBrightness/display0"))
-	call := obj.Call("org.kde.ScreenBrightness.setBrightness", 0, brightness)
-	return call.Err
+	// Use correct method name and signature: void SetBrightness(int brightness, uint flags)
+	call := obj.Call("org.kde.ScreenBrightness.Display.SetBrightness", 0, brightness, uint32(0))
+	if call.Err != nil {
+		log.Printf("Failed to set brightness: %v", call.Err)
+		return call.Err
+	}
+	return nil
 }
 
 type LightState struct {
