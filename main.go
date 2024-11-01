@@ -30,11 +30,14 @@ func loadConfig(path string) (*Config, error) {
 	return &config, nil
 }
 
-type BrightnessSensor struct {
-	Name        string `json:"name"`
-	StateTopic  string `json:"state_topic"`
-	UnitOfMeas  string `json:"unit_of_measurement"`
-	DeviceClass string `json:"device_class"`
+type LightDevice struct {
+	Name       string `json:"name"`
+	UniqueID   string `json:"uniq_id"`
+	CommandT   string `json:"cmd_t"`
+	StateT     string `json:"stat_t"`
+	Schema     string `json:"schema"`
+	Brightness bool   `json:"brightness"`
+	BaseTopic  string `json:"~"`
 }
 
 func getBrightness(conn *dbus.Conn) (int32, error) {
@@ -54,23 +57,50 @@ func getBrightness(conn *dbus.Conn) (int32, error) {
 	return brightness, nil
 }
 
+func setBrightness(conn *dbus.Conn, brightness int32) error {
+	print(brightness)
+	obj := conn.Object("org.kde.ScreenBrightness", dbus.ObjectPath("/org/kde/ScreenBrightness/display0"))
+	call := obj.Call("org.kde.ScreenBrightness.setBrightness", 0, brightness)
+	return call.Err
+}
+
+type LightState struct {
+	Brightness int    `json:"brightness"`
+	State      string `json:"state"`
+}
+
 func publishBrightness(client mqtt.Client, brightness int32) {
-	// Publish current brightness
-	topic := "homeassistant/sensor/screen_brightness/state"
-	client.Publish(topic, 0, true, fmt.Sprintf("%d", brightness))
+	state := LightState{
+		Brightness: int(brightness),
+		State:      "ON",
+	}
+	if brightness == 0 {
+		state.State = "OFF"
+	}
+
+	payload, err := json.Marshal(state)
+	if err != nil {
+		log.Printf("Error marshaling state: %v", err)
+		return
+	}
+
+	topic := "homeassistant/light/screen/state"
+	client.Publish(topic, 0, true, payload)
 }
 
 func publishConfig(client mqtt.Client) {
-	// Publish sensor configuration
-	configTopic := "homeassistant/sensor/screen_brightness/config"
-	sensor := BrightnessSensor{
-		Name:        "Screen Brightness",
-		StateTopic:  "homeassistant/sensor/screen_brightness/state",
-		UnitOfMeas:  "%",
-		DeviceClass: "illuminance",
+	configTopic := "homeassistant/light/screen/config"
+	device := LightDevice{
+		Name:       "Screen Brightness",
+		UniqueID:   "screen_brightness",
+		BaseTopic:  "homeassistant/light/screen",
+		CommandT:   "~/set",
+		StateT:     "~/state",
+		Schema:     "json",
+		Brightness: true,
 	}
 
-	if payload, err := json.Marshal(sensor); err == nil {
+	if payload, err := json.Marshal(device); err == nil {
 		client.Publish(configTopic, 0, true, payload)
 	}
 }
@@ -129,6 +159,21 @@ func main() {
 			publishBrightness(client, brightness)
 		}
 	}()
+
+	// Add message handler for brightness commands
+	client.Subscribe("homeassistant/light/screen/set", 0, func(client mqtt.Client, msg mqtt.Message) {
+		var cmd LightState
+		if err := json.Unmarshal(msg.Payload(), &cmd); err != nil {
+			log.Printf("Error parsing command: %v", err)
+			return
+		}
+
+		if cmd.State == "OFF" {
+			setBrightness(conn, 0)
+		} else {
+			setBrightness(conn, int32(cmd.Brightness))
+		}
+	})
 
 	// Keep the program running
 	select {}
