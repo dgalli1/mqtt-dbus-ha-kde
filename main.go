@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/godbus/dbus/v5"
@@ -59,7 +60,7 @@ func getBrightness(conn *dbus.Conn) (int32, error) {
 func setBrightness(conn *dbus.Conn, brightness int32) error {
 	obj := conn.Object("org.kde.ScreenBrightness", dbus.ObjectPath("/org/kde/ScreenBrightness/display0"))
 	// Use correct method name and signature: void SetBrightness(int brightness, uint flags)
-	call := obj.Call("org.kde.ScreenBrightness.Display.SetBrightness", 0, brightness, uint32(0))
+	call := obj.Call("org.kde.ScreenBrightness.Display.SetBrightness", 0, brightness, uint32(1))
 	if call.Err != nil {
 		log.Printf("Failed to set brightness: %v", call.Err)
 		return call.Err
@@ -119,62 +120,8 @@ func publishConfig(client mqtt.Client) {
 	}
 }
 
-func main() {
-	// Load configuration
-	config, err := loadConfig("/etc/go-mqtt-dbus.conf")
-	if err != nil {
-		log.Fatal("Failed to load config:", err)
-	}
-
-	// Connect to the session bus instead of system bus
-	conn, err := dbus.ConnectSessionBus()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-
-	// MQTT client options
-	opts := mqtt.NewClientOptions()
-	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", config.MQTTBroker, config.MQTTPort))
-	opts.SetClientID(config.ClientID)
-
-	// Create and start a client
-	client := mqtt.NewClient(opts)
-	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		log.Fatal(token.Error())
-	}
-
-	fmt.Println("Connected to MQTT broker")
-
-	// Publish initial configuration
-	publishConfig(client)
-
-	// Start monitoring brightness
-
-	// Get initial brightness and publish it
-	brightness, err := getBrightness(conn)
-	if err != nil {
-		log.Fatal("Failed to get initial brightness:", err)
-	}
-	publishBrightness(client, brightness)
-
-	// Subscribe to brightness changes
-	signal := make(chan *dbus.Signal, 10)
-	conn.Signal(signal)
-	conn.BusObject().Call("org.freedesktop.DBus.AddMatch", 0,
-		fmt.Sprintf("type='signal',interface='org.kde.ScreenBrightness',member='BrightnessChanged',path='/org/kde/ScreenBrightness'"))
-	go func() {
-		for range signal {
-			brightness, err := getBrightness(conn)
-			if err != nil {
-				log.Println("Failed to get brightness:", err)
-				continue
-			}
-			publishBrightness(client, brightness)
-		}
-	}()
-
-	// Add message handler for brightness commands
+func setupMQTTHandlers(client mqtt.Client, conn *dbus.Conn) {
+	// Set up the message handler for brightness commands
 	client.Subscribe("homeassistant/light/screen/set", 0, func(client mqtt.Client, msg mqtt.Message) {
 		var cmd LightState
 		if err := json.Unmarshal(msg.Payload(), &cmd); err != nil {
@@ -189,6 +136,90 @@ func main() {
 			setBrightness(conn, scaleBrightnessFromHA(cmd.Brightness))
 		}
 	})
+}
+
+func initializeMQTT(config *Config, conn *dbus.Conn) mqtt.Client {
+	opts := mqtt.NewClientOptions()
+	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", config.MQTTBroker, config.MQTTPort))
+	opts.SetClientID(config.ClientID)
+
+	// Add connection lost handler
+	opts.SetConnectionLostHandler(func(client mqtt.Client, err error) {
+		log.Printf("Connection lost: %v", err)
+		// Attempt to reconnect
+		for {
+			if token := client.Connect(); token.Wait() && token.Error() != nil {
+				log.Printf("Failed to reconnect: %v", token.Error())
+				// Wait before retrying
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			log.Println("Successfully reconnected to MQTT broker")
+			// Republish config and current state after reconnection
+			publishConfig(client)
+			if brightness, err := getBrightness(conn); err == nil {
+				publishBrightness(client, brightness)
+			}
+			// Reestablish subscriptions
+			setupMQTTHandlers(client, conn)
+			break
+		}
+	})
+
+	// Add connect handler
+	opts.SetOnConnectHandler(func(client mqtt.Client) {
+		log.Println("Connected to MQTT broker")
+		// Publish initial configuration and state
+		publishConfig(client)
+		if brightness, err := getBrightness(conn); err == nil {
+			publishBrightness(client, brightness)
+		}
+		// Set up message handlers
+		setupMQTTHandlers(client, conn)
+	})
+
+	// Create and connect client
+	client := mqtt.NewClient(opts)
+	if token := client.Connect(); token.Wait() && token.Error() != nil {
+		log.Fatal(token.Error())
+	}
+
+	return client
+}
+
+func main() {
+	// Load configuration
+	config, err := loadConfig("/etc/go-mqtt-dbus.conf")
+	if err != nil {
+		log.Fatal("Failed to load config:", err)
+	}
+
+	// Connect to the session bus
+	conn, err := dbus.ConnectSessionBus()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	// Initialize MQTT client with reconnection handling
+	client := initializeMQTT(config, conn)
+
+	// Subscribe to brightness changes via DBus
+	signal := make(chan *dbus.Signal, 10)
+	conn.Signal(signal)
+	conn.BusObject().Call("org.freedesktop.DBus.AddMatch", 0,
+		fmt.Sprintf("type='signal',interface='org.kde.ScreenBrightness',member='BrightnessChanged',path='/org/kde/ScreenBrightness'"))
+
+	go func() {
+		for range signal {
+			brightness, err := getBrightness(conn)
+			if err != nil {
+				log.Println("Failed to get brightness:", err)
+				continue
+			}
+			publishBrightness(client, brightness)
+		}
+	}()
 
 	// Keep the program running
 	select {}
