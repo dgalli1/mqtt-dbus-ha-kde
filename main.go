@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -12,9 +13,10 @@ import (
 )
 
 type Config struct {
-	MQTTBroker string `json:"mqtt_broker"`
-	MQTTPort   int    `json:"mqtt_port"`
-	ClientID   string `json:"client_id"`
+	MQTTBroker                    string            `json:"mqtt_broker"`
+	MQTTPort                      int               `json:"mqtt_port"`
+	ClientID                      string            `json:"client_id"`
+	HomeAssistantPropertyIDsRegex map[string]string `json:"homeassistant_property_ids_regex"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -40,6 +42,14 @@ type LightDevice struct {
 	Brightness bool   `json:"brightness"`
 	BaseTopic  string `json:"~"`
 }
+
+type DisplayInfo struct {
+	Name         string // DBus display name (e.g., "display0")
+	PropertyName string // Property name from config
+	Label        string // Display label
+}
+
+var displayMappings []DisplayInfo
 
 func getBrightness(conn *dbus.Conn) (int32, error) {
 
@@ -138,6 +148,53 @@ func setupMQTTHandlers(client mqtt.Client, conn *dbus.Conn) {
 	})
 }
 
+func getDisplays(conn *dbus.Conn, config *Config) error {
+	// qdbus org.kde.ScreenBrightness /org/kde/ScreenBrightness org.kde.ScreenBrightness.DisplaysDBusNames
+	displayMappings = []DisplayInfo{} // Reset mappings
+
+	obj := conn.Object("org.kde.ScreenBrightness", dbus.ObjectPath("/org/kde/ScreenBrightness"))
+	variant, err := obj.GetProperty("org.kde.ScreenBrightness.DisplaysDBusNames")
+	if err != nil {
+		return fmt.Errorf("getting display names property: %w", err)
+	}
+
+	displayNames, ok := variant.Value().([]string)
+	if !ok {
+		return fmt.Errorf("unexpected type for display names: %T", variant.Value())
+	}
+
+	for _, name := range displayNames {
+		// qdbus org.kde.ScreenBrightness /org/kde/ScreenBrightness/display11 org.kde.ScreenBrightness.Display.Label
+		obj := conn.Object("org.kde.ScreenBrightness", dbus.ObjectPath("/org/kde/ScreenBrightness/"+name))
+		label, err := obj.GetProperty("org.kde.ScreenBrightness.Display.Label")
+		if err != nil {
+			return fmt.Errorf("getting display label property: %w", err)
+		}
+
+		labelStr, ok := label.Value().(string)
+		if !ok {
+			continue
+		}
+
+		// Check each regex pattern from config
+		for propertyName, pattern := range config.HomeAssistantPropertyIDsRegex {
+			if regexp.MustCompile(pattern).MatchString(labelStr) {
+				fmt.Printf("Found match for %s with pattern %s\n", propertyName, pattern)
+				displayMappings = append(displayMappings, DisplayInfo{
+					Name:         name,
+					PropertyName: propertyName,
+					Label:        labelStr,
+				})
+			}
+		}
+	}
+	for _, display := range displayMappings {
+		fmt.Printf("Display: %s, Property: %s, Label: %s\n", display.Name, display.PropertyName, display.Label)
+	}
+
+	return nil
+}
+
 func initializeMQTT(config *Config, conn *dbus.Conn) mqtt.Client {
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(fmt.Sprintf("tcp://%s:%d", config.MQTTBroker, config.MQTTPort))
@@ -183,7 +240,6 @@ func initializeMQTT(config *Config, conn *dbus.Conn) mqtt.Client {
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		log.Fatal(token.Error())
 	}
-
 	return client
 }
 
@@ -201,6 +257,7 @@ func main() {
 	}
 	defer conn.Close()
 
+	getDisplays(conn, config)
 	// Initialize MQTT client with reconnection handling
 	client := initializeMQTT(config, conn)
 
