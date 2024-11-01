@@ -72,11 +72,22 @@ type LightState struct {
 	State      string `json:"state"`
 }
 
+func scaleBrightnessToHA(brightness int32) int {
+	// Convert from 0-10000 to 0-255
+	return int((float64(brightness) / 10000.0) * 255)
+}
+
+func scaleBrightnessFromHA(brightness int) int32 {
+	// Convert from 0-255 to 0-10000
+	return int32((float64(brightness) / 255.0) * 10000)
+}
+
 func publishBrightness(client mqtt.Client, brightness int32) {
 	state := LightState{
-		Brightness: int(brightness),
+		Brightness: scaleBrightnessToHA(brightness),
 		State:      "ON",
 	}
+	log.Printf("Scaled brightness to HA: %d", scaleBrightnessToHA(brightness))
 	if brightness == 0 {
 		state.State = "OFF"
 	}
@@ -170,11 +181,12 @@ func main() {
 			log.Printf("Error parsing command: %v", err)
 			return
 		}
+		log.Printf("Received command: %+v", cmd)
 
 		if cmd.State == "OFF" {
 			setBrightness(conn, 0)
 		} else {
-			setBrightness(conn, int32(cmd.Brightness))
+			setBrightness(conn, scaleBrightnessFromHA(cmd.Brightness))
 		}
 	})
 
