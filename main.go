@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"time"
 
@@ -13,6 +14,10 @@ import (
 )
 
 const (
+	// Config file path segments
+	configDir  = ".config"
+	configFile = "go-mqtt-dbus.json"
+
 	// DBus Service
 	dbusScreenBrightnessService = "org.kde.ScreenBrightness"
 
@@ -320,9 +325,24 @@ func initializeMQTT(config *Config, conn *dbus.Conn) mqtt.Client {
 	return client
 }
 
+func getConfigPath() string {
+	// Check if XDG_CONFIG_HOME is set
+	configPath := os.Getenv("XDG_CONFIG_HOME")
+	if configPath == "" {
+		// If not, default to ~/.config
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			// Handle the error if the home directory cannot be determined
+			log.Fatal("Could not determine home directory: " + err.Error())
+		}
+		configPath = filepath.Join(homeDir, configDir)
+	}
+	return configPath
+}
+
 func main() {
-	// Load configuration
-	config, err := loadConfig("/etc/go-mqtt-dbus.conf")
+	// Then in the main function where the $SELECTION_PLACEHOLDER$ is:
+	config, err := loadConfig(filepath.Join(getConfigPath(), configFile))
 	if err != nil {
 		log.Fatal("Failed to load config:", err)
 	}

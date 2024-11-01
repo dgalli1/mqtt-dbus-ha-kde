@@ -1,17 +1,12 @@
 # MQTT D-Bus Home Assistant Integration
 
-A Go service that connects your Linux system's screen brightness to Home Assistant via MQTT.
+A Go service that connects your Plasma 6 screen brightness controlle to Home Assistant via MQTT.
 
-## Limitations
 
-- Currently supports only one screen/monitor
-- Does not verify maximum brightness values
-- Assumes default D-Bus paths for screen brightness control (KDE)
-- Fixed scaling from 0-10000 (KDE) to 0-255 (Home Assistant)
 
 ## Configuration
 
-Create a configuration file at `/etc/go-mqtt-dbus.conf` with the following JSON structure:
+Create a configuration file at `~/.config/go-mqtt-dbus.conf` with the following JSON structure:
     
 ```json
 {
@@ -23,6 +18,44 @@ Create a configuration file at `/etc/go-mqtt-dbus.conf` with the following JSON 
     }
 }
 ```
+
+### Configuration Options
+#### mqtt_broker:
+Type: String
+
+Purpose: The IP address or hostname of your MQTT broker (e.g., "192.168.1.100" or "homeassistant")
+
+Example: "mqtt_broker": "192.168.1.10"
+
+#### mqtt_port:
+Type: Integer
+
+Purpose: The port number on which the MQTT broker is listening
+
+Default: 1883 (standard MQTT port)
+
+Example: "mqtt_port": 1883
+
+#### client_id:
+Type: String
+
+Purpose: A unique identifier for this MQTT client instance
+
+Example: "client_id": "mqtt-dbus-brightness-ha"
+
+Note: Should be unique across all clients connecting to your MQTT broker
+
+#### homeassistant_property_ids_regex:
+Type: Object (key-value pairs)
+
+Purpose: Maps Home Assistant property names to regex patterns for matching display names
+
+Structure:
+
+Key: Home Assistant property name
+
+Value: Regular expression pattern to match display names
+
 
 ## Installation
 
@@ -55,7 +88,7 @@ Description=MQTT D-Bus Home Assistant Integration
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/go-mqtt-dbus-ha
+ExecStart=%h/go/bin/go-mqtt-dbus-ha
 Restart=on-failure
 Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus"
 
@@ -107,3 +140,7 @@ actions:
     action: light.turn_on
 mode: single
 ```
+
+## Known Bugs
+
+- Im lazy and didn't implement a way to handle screen disconnects and connects the service will automaticly restart if a screen is disconnected aslong as you use systemd but it's kinda ugly.
