@@ -69,18 +69,18 @@ go install github.com/dgalli1/mqtt-dbus-ha-kde@latest
 Test if everything works as expected:
 
 ```bash
-go-mqtt-dbus-ha
+mqtt-dbus-ha-kde
 ```
 
 if you don't have go setup correctly you can also run the binary directly:
 
 ```bash
-~/go/bin/go-mqtt-dbus-ha
+~/go/bin/mqtt-dbus-ha-kde
 ```
 
 ## Systemd Service
 
-Create a systemd user service file at `~/.config/systemd/user/go-mqtt-dbus-ha.service` with the following content:
+Create a systemd user service file at `~/.config/systemd/user/mqtt-dbus-ha-kde.service` with the following content:
 
 ```ini
 [Unit]
@@ -88,7 +88,7 @@ Description=MQTT D-Bus Home Assistant Integration
 After=network.target
 
 [Service]
-ExecStart=%h/go/bin/go-mqtt-dbus-ha
+ExecStart=%h/go/bin/mqtt-dbus-ha-kde
 Restart=on-failure
 Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%U/bus"
 
@@ -99,8 +99,8 @@ WantedBy=default.target
 Enable and start the service:
 
 ```bash
-systemctl --user enable go-mqtt-dbus-ha.service
-systemctl --user start go-mqtt-dbus-ha.service
+systemctl --user enable mqtt-dbus-ha-kde.service
+systemctl --user start mqtt-dbus-ha-kde.service
 ```
 
 
